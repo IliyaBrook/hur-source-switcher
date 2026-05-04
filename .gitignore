@@ -6,13 +6,14 @@
 
 # Build artifacts
 build/
+dist/
 bin/
 gen/
 *.apk
-!hur-source-switcher.apk
 *.dex
 *.class
 *.jar
+!gradle/wrapper/gradle-wrapper.jar
 
 # Keystores
 *.keystore

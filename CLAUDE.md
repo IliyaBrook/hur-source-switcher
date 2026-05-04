@@ -6,27 +6,38 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 A small companion APK for the Coagent V8AUTO-MX6Q head unit (Android 4.4.2, API 19). It hooks into the MCU's `SOURCE_CHANGED` and `KEY_CHANGED` broadcasts to splice the third-party HUR (Head Unit Revived / Android Auto) app into the steering-wheel SOURCE cycle and route audio through the `APP` MCU source.
 
-This is **not** a standard Android Studio / Gradle project. There is no `build.gradle`, no `app/` module, no resources directory — just `src/AndroidManifest.xml` and Java sources. The build pipeline is hand-rolled and runs from Termux on the device itself (see `README.md` "Building from source").
+This is now a standard Android / Gradle project. It has a `build.gradle` file at the root. The sources live in the standard location: `src/main/java/com/hur/sourceswitcher/` and the manifest is at `src/main/AndroidManifest.xml`.
 
-## Source layout quirk
+## Source layout
 
-Sources live under `src/ui/` and `src/module/`, but **every `.java` file declares `package com.hur.sourceswitcher`** — the directories are organizational only and do not reflect the package. The manifest uses dot-prefixed names (`.KeyReceiver`, `.SourceService`, etc.) that resolve against `package="com.hur.sourceswitcher"` in `AndroidManifest.xml`. When adding a new class, place it in either directory but keep the flat package, and remember to add it to the `ecj` compile command in the README's build steps (sources are listed explicitly: `src/ui/*.java src/module/*.java`).
+Sources live under `src/main/java/com/hur/sourceswitcher/`. The manifest is at `src/main/AndroidManifest.xml`. Every `.java` file declares `package com.hur.sourceswitcher`.
 
 ## Build / install
 
-Building requires the device's own `framework-res.apk` and `framework.jar` (pulled via ADB) — these are not in the repo and are gitignored. The end-to-end commands are in `README.md` under "Building from source (Termux)". For a normal dev cycle the workflow is:
+The project can be built using Gradle (standard) or via the provided `Makefile` which wraps Gradle for convenience.
+
+```bash
+# Build and copy to dist/
+make dist
+
+# Install and run
+make install
+make run
+```
+
+Legacy manual build commands are still in `README.md` under "Building from source (Manual/Termux)". For a normal dev cycle the workflow is:
 
 ```bash
 # Install (after rebuilding the APK in Termux)
 adb connect <head unit IP>:5555
-adb install -r hur-source-switcher.apk
+adb install -r dist/hur-source-switcher.apk
 
 # Mandatory after first install: app must be launched once or
 # Android 4.4 will not deliver broadcasts to it (stopped state).
 adb shell "am start -n com.hur.sourceswitcher/.MainActivity"
 
 # Tail logs (everything tags as "HURSourceSwitcher")
-adb logcat -s HURSourceSwitcher:*
+make logcat
 ```
 
 There is no test suite, no lint config, no formatter — code is plain Android-4.4-era Java 1.7 (no diamond <>, no try-with-resources in some files, no Java 8 APIs).

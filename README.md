@@ -9,7 +9,8 @@ A companion app for [Head Unit Revived (HUR)](https://github.com/andreknieriem/h
 - [The Solution](#the-solution)
 - [Prerequisites](#prerequisites)
 - [Installation](#installation)
-- [Building from Source](#building-from-source-termux)
+- [Development (Makefile)](#development-makefile)
+- [Building from Source (Manual/Termux)](#building-from-source-manualtermux)
 - [MCU Control Reference](#mcu-control--command-reference)
 - [Known Issues](#known-issues)
 - [Files](#files)
@@ -80,13 +81,32 @@ adb shell "am start -n com.hur.sourceswitcher/.MainActivity"
 adb connect <head unit IP>:5555
 
 # Install the APK
-adb install hur-source-switcher.apk
+adb install dist/hur-source-switcher.apk
 
 # Launch once to activate
 adb shell "am start -n com.hur.sourceswitcher/.MainActivity"
 ```
 
-## Building from source (Termux)
+## Development (Makefile)
+
+For a quick development cycle on a PC (requires Gradle and ADB in PATH):
+
+```bash
+# Build and copy APK to dist/hur-source-switcher.apk
+make dist
+
+# Install to connected device
+make install
+
+# Launch and follow logs
+make run
+make logcat
+
+# Clean build artifacts
+make clean
+```
+
+## Building from source (Manual/Termux)
 
 Required packages: `ecj`, `dx`, `aapt2`, `apksigner`
 
@@ -100,14 +120,19 @@ unzip framework.jar classes.dex
 d2j-dex2jar classes.dex -o framework-classes.jar
 
 # 3. Compile
-ecj -source 1.7 -target 1.7 -classpath framework-classes.jar -d build/classes src/ui/*.java src/module/*.java
+ecj -source 1.7 -target 1.7 -classpath framework-classes.jar -d build/classes src/main/java/com/hur/sourceswitcher/*.java
+```
 
 # 4. Convert to DEX
+```bash
 dx --dex --output=build/classes.dex build/classes/
+```
 
 # 5. Build APK
-aapt2 link --manifest AndroidManifest.xml -o build/base.apk -I framework-res.apk \
+```bash
+aapt2 link --manifest src/main/AndroidManifest.xml -o build/base.apk -I framework-res.apk \
   --min-sdk-version 19 --target-sdk-version 19 --version-code 1 --version-name 1.5
+```
 cp build/base.apk build/app.apk
 zip -j build/app.apk build/classes.dex
 
@@ -163,14 +188,16 @@ dumpsys media.audio_policy
 
 ## Files
 
-- `hur-source-switcher.apk` — prebuilt signed APK
-- `src/AndroidManifest.xml` — manifest
-- `src/ui/MainActivity.java` — activity used to activate the app
-- `src/module/SourceReceiver.java` — BroadcastReceiver, intercepts SOURCE_CHANGED
-- `src/module/SourceService.java` — service that switches source via shell
-- `src/module/KeyReceiver.java` — Receiver for steering wheel buttons
-- `src/module/KeyMonitorService.java` — Service for monitoring key events
-- `src/module/UsbReceiver.java` — Receiver for USB events
+- `Makefile` — development shortcuts
+- `dist/` — (ignored) directory for build artifacts
+- `src/main/AndroidManifest.xml` — manifest
+- `src/main/java/com/hur/sourceswitcher/MainActivity.java` — activity used to activate the app
+- `src/main/java/com/hur/sourceswitcher/SourceReceiver.java` — BroadcastReceiver, intercepts SOURCE_CHANGED
+- `src/main/java/com/hur/sourceswitcher/SourceService.java` — service that switches source via shell
+- `src/main/java/com/hur/sourceswitcher/KeyReceiver.java` — Receiver for steering wheel buttons
+- `src/main/java/com/hur/sourceswitcher/KeyMonitorService.java` — Service for monitoring key events
+- `src/main/java/com/hur/sourceswitcher/UsbReceiver.java` — Receiver for USB events
+- `build.gradle` / `settings.gradle` — Gradle configuration
 
 ## Disclaimer
 
