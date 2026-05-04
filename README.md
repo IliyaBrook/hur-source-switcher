@@ -1,90 +1,117 @@
 # HUR Source Switcher
 
-Приложение для магнитолы Coagent V8AUTO-MX6Q (Android 4.4.2), которое добавляет источник APP (Head Unit Revived) в цикл переключения SOURCE на руле.
+A companion app for [Head Unit Revived (HUR)](https://github.com/andreknieriem/headunit-revived) running on the Coagent V8AUTO-MX6Q head unit (Android 4.4.2). It adds HUR to the steering wheel SOURCE/MODE button cycle and makes audio routing to HUR work automatically.
 
-## Проблема
+## Table of Contents
 
-Магнитола V8AUTO имеет кнопку SOURCE/MODE на руле, которая переключает между источниками звука: TUNER (радио), USB, BTAUDIO, F_AUX. Приложение HUR (Android Auto) не входит в этот цикл, и после переключения на другой источник вернуться на HUR кнопкой руля невозможно.
+- [What is this for?](#what-is-this-for)
+- [The Problem](#the-problem-technical)
+- [The Solution](#the-solution)
+- [Prerequisites](#prerequisites)
+- [Installation](#installation)
+- [Building from Source](#building-from-source-termux)
+- [MCU Control Reference](#mcu-control--command-reference)
+- [Known Issues](#known-issues)
+- [Files](#files)
+- [License](#license)
 
-## Решение
+## What is this for?
 
-Приложение `com.hur.sourceswitcher` слушает broadcast `com.coagent.intent.action.SOURCE_CHANGED` и перехватывает два перехода:
+[Head Unit Revived](https://github.com/andreknieriem/headunit-revived) brings Android Auto to older aftermarket head units. On the V8AUTO-MX6Q (and similar Coagent units) it works visually, but audio does not pass through to the speakers out of the box — the head unit's MCU routes audio per *source*, and HUR lives inside the Android stack which the MCU does not switch to on its own. There is also no way to reach HUR with the steering wheel SOURCE/MODE button: that button cycles only between built-in sources (radio, USB, AUX, Bluetooth) and skips Android apps entirely.
 
-1. **F_AUX → TUNER**: вместо TUNER переключает на APP и запускает HUR
-2. **APP → F_AUX**: вместо F_AUX переключает на TUNER (завершает цикл)
+This app fixes both problems together. With it installed, pressing SOURCE/MODE on the steering wheel rotates HUR into the cycle: when you reach the HUR slot, the app launches automatically and the MCU is switched to the APP source so audio from HUR goes to the speakers. Pressing SOURCE/MODE again moves on to the next source (e.g. radio) and restores normal audio routing. No touchscreen tap, no manual audio switching — one button on the wheel takes you to HUR and back.
 
-### Результат — цикл SOURCE на руле:
+## The Problem (technical)
+
+The V8AUTO head unit has a SOURCE/MODE button on the steering wheel that cycles between audio sources: TUNER (radio), USB, BTAUDIO, F_AUX. The HUR app (Android Auto) is not part of this cycle, so once you switch to another source, you can't return to HUR using the steering wheel button. On top of that, audio from Android apps (HUR included) only reaches the speakers when the MCU's active source is `APP`, and the stock firmware never selects `APP` from the SOURCE button.
+
+## The Solution
+
+The `com.hur.sourceswitcher` app listens to the `com.coagent.intent.action.SOURCE_CHANGED` broadcast and intercepts two transitions:
+
+1. **F_AUX → TUNER**: switches to APP instead of TUNER, launches HUR, and routes audio to the speakers
+2. **APP → F_AUX**: switches to TUNER instead of F_AUX (closes the cycle)
+3. **NEXT/PRE/VR buttons**: intercepts steering wheel media keys and sends them to HUR (requires `keyrelay` daemon and Root).
+
+### Result — steering wheel SOURCE cycle:
 ```
-TUNER → [USB если подключён] → [BTAUDIO если BT] → F_AUX → APP (HUR) → TUNER → ...
+TUNER → [USB if connected] → [BTAUDIO if BT] → F_AUX → APP (HUR) → TUNER → ...
 ```
 
-## Как работает звук через HUR
+## How audio routing works through HUR
 
-Магнитола использует MCU (микроконтроллер) для маршрутизации аудио. Чтобы звук из Android-приложений шёл на динамики, нужно переключить MCU source на APP:
+The head unit uses an MCU (microcontroller) for audio routing. To get audio from Android apps to the speakers, the MCU source must be switched to APP:
 
 ```bash
-# Переключить source на APP (звук из Android → динамики)
+# Switch source to APP (audio from Android → speakers)
 adb shell "service call coagent.source 1 s16 APP i32 0"
 
 # Unmute MCU
 adb shell "service call coagent.settings 11 i32 0"
 ```
 
-Приложение делает это автоматически при переключении на APP.
+The app does this automatically when switching to APP.
 
-## Важные особенности
+## Important details
 
-### Mute при переключении
-При переключении source приложение сначала глушит звук (mute), переключает source, затем включает обратно (unmute). Это предотвращает наложение двух источников звука (радио + APP), которое вызывает хрипы.
+### Mute on switching
+When switching source, the app first mutes the audio, switches the source, then unmutes. This prevents two audio sources (radio + APP) from overlapping, which causes distortion.
 
-### Cooldown 3 секунды
-После каждого перехвата есть пауза 3 секунды, чтобы предотвратить зацикливание (наше переключение тоже генерирует broadcast).
+### 3-second cooldown
+After each interception there is a 3-second pause to prevent looping (our switch also generates a broadcast).
 
-### Активация после установки
-На Android 4.4 приложение в состоянии "stopped" (только установленное, не запускавшееся) не получает broadcast. После установки APK нужно один раз запустить MainActivity:
+### Activation after install
+On Android 4.4, an app in the "stopped" state (just installed, never launched) does not receive broadcasts. After installing the APK, MainActivity must be launched once:
 ```bash
 adb shell "am start -n com.hur.sourceswitcher/.MainActivity"
 ```
 
-## Установка
+## Prerequisites
+
+- **Device**: Coagent V8AUTO-MX6Q head unit (or compatible).
+- **OS**: Android 4.4.2 (API 19).
+- **Root access**: Required for steering wheel button support (via `keyrelay` daemon) and recommended for reliable source switching.
+- **Head Unit Revived (HUR)**: Installed and configured.
+
+## Installation
 
 ```bash
-# Подключиться к магнитоле по WiFi ADB
-adb connect <IP магнитолы>:5555
+# Connect to the head unit via WiFi ADB
+adb connect <head unit IP>:5555
 
-# Установить APK
+# Install the APK
 adb install hur-source-switcher.apk
 
-# Запустить один раз для активации
+# Launch once to activate
 adb shell "am start -n com.hur.sourceswitcher/.MainActivity"
 ```
 
-## Сборка из исходников (Termux)
+## Building from source (Termux)
 
-Необходимые пакеты: `ecj`, `dx`, `aapt2`, `apksigner`
+Required packages: `ecj`, `dx`, `aapt2`, `apksigner`
 
 ```bash
-# 1. Скачать framework-res.apk с магнитолы (нужен для aapt2)
+# 1. Pull framework-res.apk from the head unit (needed for aapt2)
 adb pull /system/framework/framework-res.apk
 
-# 2. Скачать framework.jar и конвертировать в jar с .class файлами
+# 2. Pull framework.jar and convert to a jar with .class files
 adb pull /system/framework/framework.jar
 unzip framework.jar classes.dex
 d2j-dex2jar classes.dex -o framework-classes.jar
 
-# 3. Компиляция
-ecj -source 1.7 -target 1.7 -classpath framework-classes.jar -d build/classes src/*.java
+# 3. Compile
+ecj -source 1.7 -target 1.7 -classpath framework-classes.jar -d build/classes src/ui/*.java src/module/*.java
 
-# 4. Конвертация в DEX
+# 4. Convert to DEX
 dx --dex --output=build/classes.dex build/classes/
 
-# 5. Сборка APK
+# 5. Build APK
 aapt2 link --manifest AndroidManifest.xml -o build/base.apk -I framework-res.apk \
-  --min-sdk-version 19 --target-sdk-version 19 --version-code 1 --version-name 1.0
+  --min-sdk-version 19 --target-sdk-version 19 --version-code 1 --version-name 1.5
 cp build/base.apk build/app.apk
 zip -j build/app.apk build/classes.dex
 
-# 6. Подпись
+# 6. Sign
 keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey \
   -keypass android -keyalg RSA -keysize 2048 -validity 10000 \
   -dname "CN=Debug, OU=Debug, O=Debug, L=Debug, ST=Debug, C=US"
@@ -93,15 +120,15 @@ apksigner sign --ks debug.keystore --ks-pass pass:android --key-pass pass:androi
   --ks-key-alias androiddebugkey build/app-aligned.apk
 ```
 
-## Управление MCU — справочник команд
+## MCU control — command reference
 
 ```bash
 # Source
-service call coagent.source 1 s16 APP i32 0    # переключить на APP
-service call coagent.source 1 s16 TUNER i32 0  # переключить на радио
-service call coagent.source 3                    # получить текущий source
+service call coagent.source 1 s16 APP i32 0    # switch to APP
+service call coagent.source 1 s16 TUNER i32 0  # switch to radio
+service call coagent.source 3                    # get current source
 
-# Звук
+# Audio
 service call coagent.settings 11 i32 0   # unmute
 service call coagent.settings 11 i32 1   # mute
 service call coagent.settings 13         # get mute status
@@ -109,35 +136,46 @@ service call coagent.settings 6          # volume up
 service call coagent.settings 7          # volume down
 service call coagent.settings 22         # get volume
 
-# Диагностика
+# Diagnostics
 dumpsys media.audio_flinger | grep -A5 "active tracks"
 dumpsys audio
 dumpsys media.audio_policy
 ```
 
-## Известные проблемы
+## Known issues
 
-1. **Мелькание AUX при APP→TUNER**: При переключении с APP на следующий source (TUNER) на долю секунды мелькает иконка AUX. Это ограничение broadcast-подхода — система сначала переключает на F_AUX (дефолт), затем наш receiver перехватывает и переключает на TUNER.
+1. **AUX flicker on APP→TUNER**: When switching from APP to the next source (TUNER), the AUX icon flickers briefly. This is a limitation of the broadcast-based approach — the system first switches to F_AUX (the default), then our receiver intercepts and switches to TUNER.
 
-2. **Хрип после многократных переключений**: Если быстро переключать source много раз, MCU может войти в сбойное состояние и звук начнёт хрипеть. Лечится полным выключением зажигания на 30 секунд (обычный reboot Android не сбрасывает MCU).
+2. **Distortion after repeated switching**: If you switch source rapidly many times, the MCU may enter a faulty state and audio starts to distort. Fixed by fully turning off the ignition for 30 seconds (a normal Android reboot does not reset the MCU).
 
-3. **HUR audio sink качество**: HUR выдаёт аудио на 48000 Hz, а микшер магнитолы работает на 44100 Hz. Ресемплинг на слабом i.MX6 может вызывать артефакты.
+3. **HUR audio sink quality**: HUR outputs audio at 48000 Hz, while the head unit's mixer runs at 44100 Hz. Resampling on the underpowered i.MX6 may cause artifacts.
 
-## Source IDs магнитолы (SourceConstantsDef.SourceID)
+## Head unit Source IDs (SourceConstantsDef.SourceID)
 
-| Source | Byte | Описание |
-|--------|------|----------|
-| TUNER | 0 | FM/AM радио |
-| USB | 10 | USB-флешка |
-| F_AUX | 12 | Передний AUX |
-| APP | 17 | Android-приложения (DAC) |
-| AVOFF | 18 | Экран выключен |
+| Source | Byte | Description |
+|--------|------|-------------|
+| TUNER | 0 | FM/AM radio |
+| USB | 10 | USB drive |
+| F_AUX | 12 | Front AUX |
+| APP | 17 | Android apps (DAC) |
+| AVOFF | 18 | Screen off |
 | BTAUDIO | 25 | Bluetooth A2DP |
 
-## Файлы
+## Files
 
-- `hur-source-switcher.apk` — готовый подписанный APK
-- `src/AndroidManifest.xml` — манифест
-- `src/MainActivity.java` — активити для активации приложения
-- `src/SourceReceiver.java` — BroadcastReceiver, перехватывает SOURCE_CHANGED
-- `src/SourceService.java` — сервис, переключает source через shell
+- `hur-source-switcher.apk` — prebuilt signed APK
+- `src/AndroidManifest.xml` — manifest
+- `src/ui/MainActivity.java` — activity used to activate the app
+- `src/module/SourceReceiver.java` — BroadcastReceiver, intercepts SOURCE_CHANGED
+- `src/module/SourceService.java` — service that switches source via shell
+- `src/module/KeyReceiver.java` — Receiver for steering wheel buttons
+- `src/module/KeyMonitorService.java` — Service for monitoring key events
+- `src/module/UsbReceiver.java` — Receiver for USB events
+
+## Disclaimer
+
+**USE AT YOUR OWN RISK.** This app interacts with the head unit's MCU via system services. The author is not responsible for any damage to your hardware, loss of data, or accidents caused by using this software. RAPID SWITCHING may cause the MCU to enter a temporary faulty state (see Known Issues).
+
+## License
+
+This project is licensed under the MIT License.

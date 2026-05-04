@@ -1,93 +1,93 @@
 # TODO — HUR Source Switcher
 
-## Нерешённые проблемы
+## Open issues
 
-### 1. Кнопки NEXT/PRE — нестабильная работа
-**Статус:** Частично работает, требует доработки
+### 1. NEXT/PRE buttons — unstable
+**Status:** Partially working, needs improvement
 
-**Как реализовано сейчас:**
-- `KeyReceiver.java` слушает broadcast `com.coagent.intent.action.KEY_CHANGED` от MCU
-- Проблема: MCU отправляет broadcast через `sendBroadcastAsUser(intent, UserHandle.ALL)`, который не всегда доходит до стороннего приложения на Android 4.4
-- При нажатии NEXT/PRE записывается keycode в файл `/data/local/tmp/keyrelay_cmd`
-- Фоновый shell-скрипт `keyrelay` (запускается от root) читает файл и выполняет `input keyevent <code>` от имени root (обычное приложение не может inject events — нужен `INJECT_EVENTS` permission)
+**Current implementation:**
+- `KeyReceiver.java` listens to the `com.coagent.intent.action.KEY_CHANGED` broadcast from the MCU
+- Problem: the MCU sends the broadcast via `sendBroadcastAsUser(intent, UserHandle.ALL)`, which does not always reach a third-party app on Android 4.4
+- On NEXT/PRE press, the keycode is written to the file `/data/local/tmp/keyrelay_cmd`
+- A background shell script `keyrelay` (running as root) reads the file and runs `input keyevent <code>` as root (a regular app cannot inject events — that requires `INJECT_EVENTS` permission)
 - KEYCODE_MEDIA_NEXT = 87, KEYCODE_MEDIA_PREVIOUS = 88
 
-**Известные проблемы:**
-- После переключения SOURCE туда-обратно кнопки иногда перестают работать
-- Broadcast `KEY_CHANGED` от MCU не всегда доставляется нашему receiver (sendBroadcastAsUser ограничение)
-- `keyrelay` daemon должен быть запущен (стартует при BOOT_COMPLETED и при открытии MainActivity), но может умереть
-- Polling файла с `sleep 1` добавляет задержку до 1 секунды
+**Known problems:**
+- After switching SOURCE back and forth, the buttons sometimes stop working
+- The `KEY_CHANGED` broadcast from the MCU is not always delivered to our receiver (sendBroadcastAsUser limitation)
+- The `keyrelay` daemon must be running (started on BOOT_COMPLETED and when MainActivity is opened), but it can die
+- Polling the file with `sleep 1` adds up to 1 second of latency
 
-**Что можно попробовать:**
-- Заменить broadcast receiver на мониторинг logcat (KeyMonitorService.java уже есть, но не тестировался полноценно) — logcat ловит все нажатия надёжно
-- Уменьшить sleep в keyrelay до 0.2-0.3 сек для меньшей задержки
-- Проверить, не убивает ли система keyrelay daemon
-- Рассмотреть использование `inotifywait` вместо polling
+**Things to try:**
+- Replace the broadcast receiver with logcat monitoring (KeyMonitorService.java already exists but hasn't been fully tested) — logcat catches all key presses reliably
+- Reduce the sleep in keyrelay to 0.2-0.3 sec for lower latency
+- Check whether the system is killing the keyrelay daemon
+- Consider using `inotifywait` instead of polling
 
-### 2. Кнопка VR (голосовой ассистент) — не работает
-**Статус:** Невозможно перехватить текущим методом
+### 2. VR button (voice assistant) — not working
+**Status:** Cannot be intercepted with the current approach
 
-**Проблема:**
-- Кнопка VR на руле обрабатывается MCU **аппаратно** как mute/unmute toggle
-- MCU не отправляет broadcast `KEY_CHANGED` для VR — Android её вообще не видит
-- Нет возможности перехватить через broadcast receiver или logcat
+**Problem:**
+- The VR button on the steering wheel is handled by the MCU **in hardware** as a mute/unmute toggle
+- The MCU does not send a `KEY_CHANGED` broadcast for VR — Android never sees it
+- No way to intercept via broadcast receiver or logcat
 
-**Возможные решения:**
-- Перехват через UART-протокол (нужно реверсить протокол MCU ↔ Android)
-- Патч прошивки MCU (рискованно)
-- Использовать другую физическую кнопку на руле (если есть свободная)
-- Смириться и вызывать ассистент через экран Android Auto
+**Possible solutions:**
+- Intercept via the UART protocol (requires reverse-engineering the MCU ↔ Android protocol)
+- Patch the MCU firmware (risky)
+- Use a different physical button on the steering wheel (if one is free)
+- Live with it and invoke the assistant via the Android Auto screen
 
-### 3. Телефонные звонки — звук не идёт через динамики
-**Статус:** Ограничение архитектуры Android Auto
+### 3. Phone calls — audio doesn't go to speakers
+**Status:** Android Auto architectural limitation
 
-**Проблема:**
-- Android Auto требует Bluetooth для аудио звонков, даже при USB-подключении
-- HUR issue #409 (OPEN) — разработчик знает о проблеме
+**Problem:**
+- Android Auto requires Bluetooth for call audio, even over USB
+- HUR issue #409 (OPEN) — the developer is aware of the problem
 
-**Возможные решения:**
-- Ждать фикса от разработчика HUR
-- Использовать Bluetooth HFP параллельно с USB для звонков
+**Possible solutions:**
+- Wait for a fix from the HUR developer
+- Use Bluetooth HFP in parallel with USB for calls
 
-### 4. Мелькание AUX при переключении APP → TUNER
-**Статус:** Косметический баг, ограничение broadcast-подхода
+### 4. AUX flicker on APP → TUNER switch
+**Status:** Cosmetic bug, broadcast-approach limitation
 
-**Проблема:**
-- При переключении с APP на следующий source на долю секунды мелькает иконка AUX
-- Причина: система сначала переключает на F_AUX (дефолт для неизвестного source), потом наш receiver перехватывает и переключает на TUNER
+**Problem:**
+- When switching from APP to the next source, the AUX icon flickers briefly
+- Cause: the system first switches to F_AUX (the default for an unknown source), then our receiver intercepts and switches to TUNER
 
-**Возможные решения:**
-- Патч CoagentSettings.apk — добавить APP в `SRCSourceManager.getConnectedDevice()` напрямую (правильный baksmali/smali, не dex2jar)
-- Xposed/LSPosed хук (но нужен Xposed Framework для Android 4.4)
+**Possible solutions:**
+- Patch CoagentSettings.apk — add APP directly to `SRCSourceManager.getConnectedDevice()` (proper baksmali/smali, not dex2jar)
+- Xposed/LSPosed hook (but Xposed Framework for Android 4.4 is required)
 
-## Технические заметки
+## Technical notes
 
 ### Keyrelay daemon
 ```bash
-# Запуск вручную (от root через ADB):
+# Manual launch (as root via ADB):
 echo > /data/local/tmp/keyrelay_cmd && chmod 666 /data/local/tmp/keyrelay_cmd
 nohup sh -c 'while true; do line=$(cat /data/local/tmp/keyrelay_cmd 2>/dev/null); case "$line" in [0-9]*) echo > /data/local/tmp/keyrelay_cmd; input keyevent $line 2>/dev/null;; esac; sleep 1; done' > /dev/null 2>&1 &
 ```
 
-### Почему нужен keyrelay?
-- `input keyevent` требует root или `INJECT_EVENTS` permission
-- Наше приложение запускается от обычного пользователя (u0_a37)
-- Установка в `/system/app/` не даёт `INJECT_EVENTS` без подписи платформенным ключом
-- Keyrelay запускается от root (через BOOT_COMPLETED broadcast → shell exec) и читает команды из файла
+### Why keyrelay is needed
+- `input keyevent` requires root or `INJECT_EVENTS` permission
+- Our app runs as a regular user (u0_a37)
+- Installing into `/system/app/` does not grant `INJECT_EVENTS` without a platform-key signature
+- Keyrelay runs as root (via BOOT_COMPLETED broadcast → shell exec) and reads commands from a file
 
 ### MCU source IDs
-| Source | Byte | Описание |
-|--------|------|----------|
-| TUNER | 0 | FM/AM радио |
-| USB | 10 | USB-флешка |
-| F_AUX | 12 | Передний AUX |
-| APP | 17 | Android-приложения |
+| Source | Byte | Description |
+|--------|------|-------------|
+| TUNER | 0 | FM/AM radio |
+| USB | 10 | USB drive |
+| F_AUX | 12 | Front AUX |
+| APP | 17 | Android apps |
 | BTAUDIO | 25 | Bluetooth A2DP |
 
-### Полезные ADB-команды
+### Useful ADB commands
 ```bash
-service call coagent.source 1 s16 APP i32 0   # переключить на APP
-service call coagent.source 3                   # текущий source
+service call coagent.source 1 s16 APP i32 0   # switch to APP
+service call coagent.source 3                   # current source
 service call coagent.settings 11 i32 0          # unmute
 service call coagent.settings 11 i32 1          # mute
 input keyevent 87                               # MEDIA_NEXT

@@ -1,0 +1,35 @@
+# IDE files
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# Build artifacts
+build/
+bin/
+gen/
+*.apk
+!hur-source-switcher.apk
+*.dex
+*.class
+*.jar
+
+# Keystores
+*.keystore
+*.jks
+
+# Local configuration and temporary files
+local.properties
+.gradle/
+Captures/
+*.log
+
+# System files
+.DS_Store
+Thumbs.db
+
+# Specific files mentioned in README build steps that are pulled or generated
+framework-res.apk
+framework-classes.jar
+classes.dex
+debug.keystore
